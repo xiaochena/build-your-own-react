@@ -34,30 +34,109 @@ function createTextElement(text) {
 }
 
 /**
+ * 创建一个真实的 DOM 节点
+ * @param {Object} fiber - Fiber 节点
+ * @returns {HTMLElement | Text} - 返回创建的 DOM 节点
+ */
+function createDom(fiber) {
+  const dom =
+    fiber.type == "TEXT_ELEMENT"
+      ? document.createTextNode("")
+      : document.createElement(fiber.type);
+
+  const isProperty = (key) => key !== "children";
+  Object.keys(fiber.props)
+    .filter(isProperty)
+    .forEach((name) => {
+      dom[name] = fiber.props[name];
+    });
+
+  return dom;
+}
+
+/**
  * 将元素渲染到 DOM 中
  * @param {Object} element - 虚拟 DOM 元素对象
  * @param {HTMLElement} container - 要挂载的实际 DOM 容器
  */
 function render(element, container) {
-  // 循环创建 文本或元素节点的代表 dom 对象树
-  const dom =
-    element.type == "TEXT_ELEMENT"
-      ? document.createTextNode("")
-      : document.createElement(element.type);
+  nextUnitOfWork = {
+    dom: container,
+    props: {
+      children: [element],
+    },
+  };
+}
 
-  // 过滤掉 children 属性，其他属性赋值给 dom
-  const isProperty = (key) => key !== "children";
-  Object.keys(element.props)
-    .filter(isProperty)
-    .forEach((name) => {
-      dom[name] = element.props[name];
-    });
+let nextUnitOfWork = null;
 
-  // 递归地渲染子元素
-  element.props.children.forEach((child) => render(child, dom));
+/**
+ * 工作循环函数，在空闲时间执行工作单元
+ * @param {IdleDeadline} deadline - 当前帧的空闲时间信息
+ */
+function workLoop(deadline) {
+  let shouldYield = false;
+  while (nextUnitOfWork && !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+    shouldYield = deadline.timeRemaining() < 1;
+  }
+  requestIdleCallback(workLoop);
+}
 
-  // 将渲染后的元素附加到容器
-  container.appendChild(dom);
+requestIdleCallback(workLoop);
+
+/**
+ * 执行一个工作单元
+ * @param {Object} fiber - 当前的 Fiber 节点
+ * @returns {Object | null} - 返回下一个要处理的工作单元
+ */
+function performUnitOfWork(fiber) {
+  // 创建 DOM 节点
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
+  }
+
+  // 将 DOM 节点添加到父节点
+  if (fiber.parent) {
+    fiber.parent.dom.appendChild(fiber.dom);
+  }
+
+  // 创建 Fiber 子节点
+  const elements = fiber.props.children;
+  let index = 0;
+  let prevSibling = null;
+
+  while (index < elements.length) {
+    const element = elements[index];
+
+    const newFiber = {
+      type: element.type,
+      props: element.props,
+      parent: fiber,
+      dom: null,
+    };
+
+    if (index === 0) {
+      fiber.child = newFiber;
+    } else {
+      prevSibling.sibling = newFiber;
+    }
+
+    prevSibling = newFiber;
+    index++;
+  }
+
+  // 返回下一个工作单元
+  if (fiber.child) {
+    return fiber.child;
+  }
+  let nextFiber = fiber;
+  while (nextFiber) {
+    if (nextFiber.sibling) {
+      return nextFiber.sibling;
+    }
+    nextFiber = nextFiber.parent;
+  }
 }
 
 // 自定义的 Didact 对象，包含 createElement 和 render 方法
