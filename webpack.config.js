@@ -10,6 +10,7 @@ module.exports = {
     path: path.resolve(__dirname, "dist"),
     filename: "[name].bundle.js", // [name] will be replaced by the entry key (app or admin)
   },
+  devtool: "source-map",
   module: {
     rules: [
       {

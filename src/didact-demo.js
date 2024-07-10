@@ -55,20 +55,46 @@ function createDom(fiber) {
 }
 
 /**
+ * 提交fiber 树的根节点、让 commitWork 递归地将 fiber 树中的每一个节点附加到实际的 DOM 中
+ */
+function commitRoot() {
+  commitWork(wipRoot.child);
+  // 提交完成后清空工作根节点
+  wipRoot = null;
+}
+
+/**
+ * 递归地将 fiber 树中的每一个节点附加到实际的 DOM 中
+ * @param {Object} fiber - 当前的 fiber 节点
+ */
+function commitWork(fiber) {
+  if (!fiber) {
+    return;
+  }
+  const domParent = fiber.parent.dom;
+  domParent.appendChild(fiber.dom);
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}
+
+/**
  * 将元素渲染到 DOM 中
  * @param {Object} element - 虚拟 DOM 元素对象
  * @param {HTMLElement} container - 要挂载的实际 DOM 容器
  */
 function render(element, container) {
-  nextUnitOfWork = {
+  wipRoot = {
     dom: container,
     props: {
       children: [element],
     },
   };
+
+  nextUnitOfWork = wipRoot;
 }
 
-let nextUnitOfWork = null;
+let nextUnitOfWork = null; // 下一个要处理的工作单元、既下一个要处理的 fiber 节点
+let wipRoot = null; // fiber 树的根节点
 
 /**
  * 工作循环函数，在空闲时间执行工作单元
@@ -76,9 +102,16 @@ let nextUnitOfWork = null;
  */
 function workLoop(deadline) {
   let shouldYield = false;
+
+  // 当还有工作单元且不需要让出控制权时，继续执行工作单元
   while (nextUnitOfWork && !shouldYield) {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
-    shouldYield = deadline.timeRemaining() < 1;
+    shouldYield = deadline.timeRemaining() < 1; // 如果剩余时间少于1毫秒，则让出控制权
+  }
+
+  // 当没有下一个工作单元且有工作根节点时，提交根节点fiber、将fiber 转换成真实 Dom
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot();
   }
   requestIdleCallback(workLoop);
 }
@@ -97,9 +130,9 @@ function performUnitOfWork(fiber) {
   }
 
   // 将 DOM 节点添加到父节点
-  if (fiber.parent) {
-    fiber.parent.dom.appendChild(fiber.dom);
-  }
+  // if (fiber.parent) {
+  //   fiber.parent.dom.appendChild(fiber.dom);
+  // }
 
   // 创建 Fiber 子节点
   const elements = fiber.props.children;
