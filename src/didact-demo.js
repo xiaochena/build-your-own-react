@@ -10,9 +10,11 @@ function createElement(type, props, ...children) {
     type,
     props: {
       ...props,
-      children: children.map((child) =>
-        typeof child === "object" ? child : createTextElement(child)
-      ),
+      children: children
+        .flat()
+        .map((child) =>
+          typeof child === "object" ? child : createTextElement(child)
+        ),
     },
   };
 }
@@ -115,7 +117,13 @@ function commitWork(fiber) {
   if (!fiber) {
     return;
   }
-  const domParent = fiber.parent.dom;
+  // const domParent = fiber.parent.dom;
+  let domParentFiber = fiber.parent;
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent;
+  }
+  const domParent = domParentFiber.dom;
+
   // domParent.appendChild(fiber.dom);
   if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
     domParent.appendChild(fiber.dom);
@@ -178,14 +186,12 @@ requestIdleCallback(workLoop);
  * @returns {Object | null} - 返回下一个要处理的工作单元
  */
 function performUnitOfWork(fiber) {
-  // 创建 DOM 节点
-  if (!fiber.dom) {
-    fiber.dom = createDom(fiber);
+  const isFunctionComponent = fiber.type instanceof Function;
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
   }
-
-  // 创建 Fiber 子节点
-  const elements = fiber.props.children;
-  reconcileChildren(fiber, elements);
 
   // 返回下一个工作单元
   if (fiber.child) {
@@ -198,6 +204,22 @@ function performUnitOfWork(fiber) {
     }
     nextFiber = nextFiber.parent;
   }
+}
+
+function updateHostComponent(fiber) {
+  // 创建 DOM 节点
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
+  }
+
+  // 创建 Fiber 子节点
+  const elements = fiber.props.children;
+  reconcileChildren(fiber, elements);
+}
+
+function updateFunctionComponent(fiber) {
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
 }
 
 function reconcileChildren(wipFiber, elements) {
@@ -254,32 +276,42 @@ function reconcileChildren(wipFiber, elements) {
 // 自定义的 Didact 对象，包含 createElement 和 render 方法
 const Didact = { createElement, render };
 
-// const element = Didact.createElement(
-//   "div",
-//   { style: "background: salmon" },
-//   Didact.createElement("h1", null, "Hello World"),
-//   Didact.createElement("h2", { style: "text-align:right" }, "from Didact")
-// );
+/** @jsx Didact.createElement */
+function App(props) {
+  return <h1>{props.children}</h1>;
+}
 
-const updateValue = (e) => {
-  rerender(e.target.value);
-};
+/** @jsx Didact.createElement */
+const element = (
+  <div>
+    <App>Hello World</App>
+  </div>
+);
 
-const rerender = (value) => {
-  /** @jsx Didact.createElement */
-  // 创建一个虚拟 DOM 元素
-  const element = (
-    <div>
-      <input onInput={updateValue} value={value} />
-      <div>请输入</div>
-      <h2>Hello {value}</h2>
-    </div>
-  );
-  // 获取要挂载的 DOM 容器
-  const container = document.getElementById("didact-root");
+console.log(element, "element");
 
-  // 使用 Didact 的 render 方法将虚拟 DOM 渲染到实际的 DOM 中
-  Didact.render(element, container);
-};
+const container = document.getElementById("didact-root");
+Didact.render(element, container);
 
-rerender();
+// const updateValue = (e) => {
+//   rerender(e.target.value);
+// };
+
+// const rerender = (value) => {
+//   /** @jsx Didact.createElement */
+//   // 创建一个虚拟 DOM 元素
+//   const element = (
+//     <div>
+//       <input onInput={updateValue} value={value} />
+//       <div>请输入</div>
+//       <h2>Hello {value}</h2>
+//     </div>
+//   );
+//   // 获取要挂载的 DOM 容器
+//   const container = document.getElementById("didact-root");
+
+//   // 使用 Didact 的 render 方法将虚拟 DOM 渲染到实际的 DOM 中
+//   Didact.render(element, container);
+// };
+
+// rerender();
