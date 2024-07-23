@@ -10,11 +10,9 @@ function createElement(type, props, ...children) {
     type,
     props: {
       ...props,
-      children: children
-        .flat()
-        .map((child) =>
-          typeof child === "object" ? child : createTextElement(child)
-        ),
+      children: children.map((child) =>
+        typeof child === "object" ? child : createTextElement(child)
+      ),
     },
   };
 }
@@ -213,13 +211,69 @@ function updateHostComponent(fiber) {
   }
 
   // 创建 Fiber 子节点
-  const elements = fiber.props.children;
+  const elements = fiber.props.children.flat();
   reconcileChildren(fiber, elements);
 }
 
+let wipFiber = null;
+let hookIndex = null;
+
+/**
+ * 更新函数组件
+ * @param {Object} fiber - 当前的 Fiber 节点
+ */
 function updateFunctionComponent(fiber) {
-  const children = [fiber.type(fiber.props)];
+  wipFiber = fiber;
+  hookIndex = 0;
+  wipFiber.hooks = [];
+  const children = [fiber.type(fiber.props)]; // 调用函数组件并获取其子元素
   reconcileChildren(fiber, children);
+}
+
+/**
+ * 实现 useState 钩子
+ * @param {*} initial - 初始状态
+ * @returns {Array} - 返回状态和更新状态的函数
+ */
+function useState(initial) {
+  // 尝试获取旧的 hook，
+  const oldHook =
+    wipFiber.alternate &&
+    wipFiber.alternate.hooks &&
+    wipFiber.alternate.hooks[hookIndex];
+
+  // 创建新的 hook，初始化状态和队列
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: [],
+  };
+
+  // 如果存在 旧的 oldHook 、遍历执行旧的 oldHook.queue。以更新当前hook.state
+  const actions = oldHook ? oldHook.queue : [];
+  actions.forEach((action) => {
+    hook.state = action(hook.state);
+  });
+
+  /**
+   * 定义 setState 函数，用于更新状态
+   * @param {Function} action - 状态更新函数
+   */
+  const setState = (action) => {
+    hook.queue.push(action); // 将新的 action 添加到队列
+    // 设置 Fiber 树的根节点，触发重新渲染整个应用
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      alternate: currentRoot,
+    };
+    nextUnitOfWork = wipRoot; // 设置下一个工作单元为根节点
+    deletions = [];
+  };
+
+  // 将新的 hook 添加到 Fiber 的 hooks 数组中
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+  return [hook.state, setState];
 }
 
 function reconcileChildren(wipFiber, elements) {
@@ -274,17 +328,18 @@ function reconcileChildren(wipFiber, elements) {
 }
 
 // 自定义的 Didact 对象，包含 createElement 和 render 方法
-const Didact = { createElement, render };
+const Didact = { createElement, render, useState };
 
 /** @jsx Didact.createElement */
-function App(props) {
-  return <h1>{props.children}</h1>;
+function App() {
+  const [state, setState] = Didact.useState(1);
+  return <h1 onClick={() => setState((c) => c + 1)}>Count: {state}</h1>;
 }
 
 /** @jsx Didact.createElement */
 const element = (
   <div>
-    <App>Hello World</App>
+    <App />
   </div>
 );
 
